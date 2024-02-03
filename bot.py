@@ -32,10 +32,15 @@ def heading_to_target(x, v):
     return head
 
 
-def rotate(current: float, target: float) -> Union[Literal["left", "right"], None]:
-    if abs(current - target) < 0.5:
-        return
-    return "left" if current < target else "right"
+def rotate_instruction(current: float, target: float) -> Instructions:
+    instruction = Instructions()
+    if abs(current - target) < 2:
+        pass
+    elif current < target:
+        instruction.left = True
+    else:
+        instruction.right = True
+    return instruction
 
 
 def find_landing_site(terrain: np.ndarray) -> Union[int, None]:
@@ -75,9 +80,45 @@ class Bot:
         self.initial_manoeuvre = True
         self.target_site = None
         self.target_height= None
-        self.loitering = False
         self.loiter_height = 900 # 1090+36
         self.height_pid = PID(0.1, 0.1, 0.1, setpoint=self.loiter_height, output_limits=(-1, 1))
+        self.horizontal_pid = PID(0.1, 0.1, 0.1, setpoint=0, output_limits=(-1000, 1000))
+
+        self.max_angle = 70
+        self.max_horizontal_speed = np.sin(np.deg2rad(self.max_angle)) * 3 * 5
+
+    def go_right(self, head, vx, control=0):
+        if vx < self.max_horizontal_speed:
+            angle = control if control > -self.max_angle else -self.max_angle
+            instruction = rotate_instruction(current=head, target=angle)
+            # instruction.main = True
+        else:
+            # prepare to hold altitude
+            instruction = rotate_instruction(current=head, target=0)
+        return instruction
+
+    def go_left(self, head, vx, control=0):
+        if vx > -self.max_horizontal_speed:
+            angle = control if control < self.max_angle else self.max_angle
+            instruction = rotate_instruction(current=head, target=control)
+            # instruction.main = True
+        else:
+            # prepare to hold altitude
+            instruction = rotate_instruction(current=head, target=0)
+        return instruction
+
+    def go_stop(self, head, vx, control=0):
+        instruction = rotate_instruction(current=head, target=self.max_angle if vx > 0 else -self.max_angle)
+        instruction.main = True
+        return instruction
+
+    def control_horiozontal(self, head, vx, control):
+        if control > 0:
+            return self.go_right(head, vx, -control)
+        elif control < 0:
+            return self.go_left(head, vx, -control)
+        else:
+            return self.go_stop(head, vx, control)
 
     def run(
         self,
@@ -87,24 +128,6 @@ class Bot:
         players: dict,
         asteroids: list,
     ):
-        """
-        This is the method that will be called at every time step to get the
-        instructions for the ship.
-
-        Parameters
-        ----------
-        t:
-            The current time in seconds.
-        dt:
-            The time step in seconds.
-        terrain:
-            The (1d) array representing the lunar surface altitude.
-        players:
-            A dictionary of the players in the game. The keys are the team names and
-            the values are the information about the players.
-        asteroids:
-            A list of the asteroids currently flying.
-        """
         instructions = Instructions()
 
         me = players[self.team]
@@ -113,24 +136,18 @@ class Bot:
         # convert the heading to +/-180 degrees
         head = (me.heading + 180) % 360 - 180
 
-
         # Perform an initial rotation to get the LEM pointing upwards
-        if self.initial_manoeuvre:
-            command = rotate(current=head, target=0)
-            if command == "left":
-                instructions.left = True
-            elif command == "right":
-                instructions.right = True
-            else:
-                self.initial_manoeuvre = False
-
-        # Search for a suitable landing site
         if self.target_site is None:
+            # self.target_site = 1000
             self.target_site = find_landing_site(terrain)
             if self.target_site is not None:
                 self.target_height = terrain[self.target_site]
 
-        if self.target_site is not None:
+        if self.target_site is None:
+            # if np.abs(vx) > 5:
+            #     return self.go_stop(head, vx)
+            instructions = rotate_instruction(current=head, target=0)
+        else:
             g = 1.62
             on_ax = -3 * g * np.sin(np.deg2rad(head))
             on_ay = 3 * g * np.cos(np.deg2rad(head)) - g
@@ -140,29 +157,35 @@ class Bot:
             half = 860
             x_clamp = (self.target_site - x + half) % (2 * half) - half
 
-            on_ty = time_to_target(self.target_height - y, vy, on_ay)
-            on_tx = time_to_target(x_clamp, vx, on_ax)
-            off_ty = time_to_target(self.target_height - y, vy, off_ay)
-            off_tx = time_to_target(x_clamp, vx, off_ax)
+            # on_ty = time_to_target(self.target_height - y, vy, on_ay)
+            # on_tx = time_to_target(x_clamp, vx, on_ax)
+            # off_ty = time_to_target(self.target_height - y, vy, off_ay)
+            # off_tx = time_to_target(x_clamp, vx, off_ax)
+            #
+            # print(f'{on_ax=} {on_ay=} {on_ty=} {on_tx=}')
+            # print(f'{off_ax=} {off_ay=} {off_ty=} {off_tx=}')
+            # print(f'{x_clamp=} {self.target_site=}')
+            # print(f'{head=} {x=} {y=} {vx=} {vy=}')
 
-            print(f'{on_ax=} {on_ay=} {on_ty=} {on_tx=}')
-            print(f'{off_ax=} {off_ay=} {off_ty=} {off_tx=}')
-            print(f'{x_clamp=} {self.target_site=}')
-            print(f'{head=} {x=} {y=} {vx=} {vy=}')
+            # if not (off_tx > 0) or (off_ty < off_tx):
+            #     self.height_pid.setpoint = y
 
-            if not (off_tx > 0) or (off_ty < off_tx):
-                self.height_pid.setpoint = y
-            elif critical_distance(vy, off_ay) > abs(self.target_height - y):
-                self.height_pid.setpoint = self.target_height
-            else:
-                instructions.main = True
-                return
+            # horizontal_control = self.horizontal_pid(x_clamp)
+            # print(f"{x_clamp=} {horizontal_control=}")
+            instructions = self.control_horiozontal(head, vx, x_clamp)
 
-            command = rotate(current=head, target=heading_to_target(x_clamp, vx))
-            if command == "left":
-                instructions.left = True
-            elif command == "right":
-                instructions.right = True
+
+            # elif critical_distance(vy, off_ay) > abs(self.target_height - y):
+            #     self.height_pid.setpoint = self.target_height
+            # else:
+            #     instructions.main = True
+            #     return
+            #
+            # command = rotate(current=head, target=heading_to_target(x_clamp, vx))
+            # if command == "left":
+            #     instructions.left = True
+            # elif command == "right":
+            #     instructions.right = True
 
         height_control = self.height_pid(y)
 
