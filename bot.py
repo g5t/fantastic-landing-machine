@@ -176,8 +176,8 @@ class Bot:
             # print(f"{x_clamp=} {horizontal_control=}")
             instructions = self.control_horiozontal(head, vx, x_clamp)
 
-            if abs(x_clamp) < 10 and abs(vx) < 5:
-                self.hight_pid.setpoint = (y - self.target_height) * 0.5 + self.target_height
+            if abs(x_clamp) < 10:
+                self.height_pid.setpoint = (y - self.target_height) * 0.5 + self.target_height
 
 
             # elif critical_distance(vy, off_ay) > abs(self.target_height - y):
