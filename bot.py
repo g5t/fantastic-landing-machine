@@ -18,7 +18,9 @@ def critical_distance(v, a):
     """
     Calculate the distance at which the ship will stop with a given velocity and acceleration.
     """
-    return v ** 2 / (2 * a)
+
+    dist = v ** 2 / (2 * a)
+    return dist
 
 
 def heading_to_target(x, v):
@@ -56,7 +58,7 @@ def find_landing_site(terrain: np.ndarray) -> Union[int, None]:
     run_lengths = np.diff(np.append(run_starts, n))
 
     # Find all landing regions (where the size of the run is at least 25)
-    landing_regions = np.where(run_lengths > 48)
+    landing_regions = np.where(run_lengths > 30)
     # We get points for picking a landing site close in size to the lander, so now choose the smallest one
     if len(landing_regions[0]) > 0:
         landing_sites = run_starts[landing_regions]
@@ -142,14 +144,13 @@ class Bot:
         if self.target_site is None:
             # self.target_site = 1000
             self.target_site = find_landing_site(terrain)
-            if self.target_site is not None:
-                self.target_height = terrain[self.target_site]
 
         if self.target_site is None:
             # if np.abs(vx) > 5:
             #     return self.go_stop(head, vx)
             instructions = rotate_instruction(current=head, target=0)
         else:
+            self.target_height = terrain[self.target_site]
             g = 1.62
             on_ax = -3 * g * np.sin(np.deg2rad(head))
             on_ay = 3 * g * np.cos(np.deg2rad(head)) - g
@@ -176,8 +177,21 @@ class Bot:
             # print(f"{x_clamp=} {horizontal_control=}")
             instructions = self.control_horiozontal(head, vx, x_clamp)
 
-            if abs(x_clamp) < 10:
-                self.height_pid.setpoint = (y - self.target_height) * 0.5 + self.target_height
+            if abs(x_clamp) < 80:
+                self.height_pid.setpoint = (y - self.target_height) * 0.7 + self.target_height +10
+
+            if (y - self.target_height) < 30:
+                self.height_pid.setpoint = self.target_height + 5
+            if (y - self.target_height) < 25:
+                instructions = rotate_instruction(current=head, target=0)
+                self.height_pid.setpoint = self.target_height + 2
+            if (y - self.target_height) < 10:
+                instructions = rotate_instruction(current=head, target=0)
+                self.height_pid.setpoint = self.target_height + 1
+
+            if vy < 0 and critical_distance(vy, on_ay) >= abs(self.target_height - y):
+                print(f'{vy=} {on_ay=} {self.target_height=} {y=} {critical_distance(vy, on_ay)=} {abs(self.target_height - y)=}')
+                instructions.main = True
 
 
             # elif critical_distance(vy, off_ay) > abs(self.target_height - y):
