@@ -85,13 +85,14 @@ class Bot:
         self.horizontal_pid = PID(0.1, 0.1, 0.1, setpoint=0, output_limits=(-1000, 1000))
 
         self.max_angle = 70
-        self.max_horizontal_speed = np.sin(np.deg2rad(self.max_angle)) * 3 * 5
+        self.max_horizontal_speed = np.sin(np.deg2rad(self.max_angle)) * 3
 
     def go_right(self, head, vx, control=0):
         if vx < self.max_horizontal_speed:
             angle = control if control > -self.max_angle else -self.max_angle
             instruction = rotate_instruction(current=head, target=angle)
-            # instruction.main = True
+            if abs(control) > 100:
+                instruction.main = True
         else:
             # prepare to hold altitude
             instruction = rotate_instruction(current=head, target=0)
@@ -101,7 +102,8 @@ class Bot:
         if vx > -self.max_horizontal_speed:
             angle = control if control < self.max_angle else self.max_angle
             instruction = rotate_instruction(current=head, target=angle)
-            # instruction.main = True
+            if abs(control) > 100:
+                instruction.main = True
         else:
             # prepare to hold altitude
             instruction = rotate_instruction(current=head, target=0)
