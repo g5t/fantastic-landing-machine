@@ -178,7 +178,7 @@ class Bot:
             instructions = self.control_horiozontal(head, vx, x_clamp)
 
             if abs(x_clamp) < 80:
-                self.height_pid.setpoint = (y - self.target_height) * 0.7 + self.target_height +10
+                self.height_pid.setpoint = (y - self.target_height) * 0.8 + self.target_height +10
 
             if (y - self.target_height) < 30:
                 self.height_pid.setpoint = self.target_height + 5
@@ -189,7 +189,7 @@ class Bot:
                 instructions = rotate_instruction(current=head, target=0)
                 self.height_pid.setpoint = self.target_height + 1
 
-            if vy < 0 and critical_distance(vy, on_ay) >= 1.3*abs(y - self.target_height):
+            if vy < 0 and critical_distance(vy, 2*g) >= 1.3*abs(y - self.target_height):
                 #print(f'{vy=} {on_ay=} {self.target_height=} {y=} {critical_distance(vy, on_ay)=} {abs(self.target_height - y)=}')
                 instructions.main = True
 
