@@ -7,6 +7,31 @@ import numpy as np
 from lunarlander import Instructions
 
 
+def time_to_target(x, v, a):
+    """
+    Calculate the time to reach a certain distance with a given velocity and acceleration.
+    """
+    return (-v + np.sqrt(v ** 2 + 2 * a * x)) / a
+
+
+def critical_distance(v, a):
+    """
+    Calculate the distance at which the ship will stop with a given velocity and acceleration.
+    """
+    return v ** 2 / (2 * a)
+
+
+def heading_to_target(x, v):
+    ang = np.degrees(np.arctan2(-x, v))
+    head = ang
+    special = 70.5  # approx arccos(1/3)
+    if head < -special:
+        head = -special
+    elif head > special:
+        head = special
+    return head
+
+
 def rotate(current: float, target: float) -> Union[Literal["left", "right"], None]:
     if abs(current - target) < 0.5:
         return
@@ -25,14 +50,14 @@ def find_landing_site(terrain: np.ndarray) -> Union[int, None]:
     # Find run lengths
     run_lengths = np.diff(np.append(run_starts, n))
 
-    # Find largest run
-    imax = np.argmax(run_lengths)
-    start = run_starts[imax]
-    end = start + run_lengths[imax]
-
-    # Return location if large enough
-    if (end - start) > 40:
-        loc = int(start + (end - start) * 0.5)
+    # Find all landing regions (where the size of the run is at least 25)
+    landing_regions = np.where(run_lengths > 24)
+    # We get points for picking a landing site close in size to the lander, so now choose the smallest one
+    if len(landing_regions[0]) > 0:
+        landing_sites = run_starts[landing_regions]
+        landing_sizes = run_lengths[landing_regions]
+        imin = np.argmin(landing_sizes)
+        loc = int(landing_sites[imin] + (landing_sizes[imin] * 0.5))
         print("Found landing site at", loc)
         return loc
 
@@ -43,11 +68,16 @@ class Bot:
     """
 
     def __init__(self):
-        self.team = "Apollo 11"  # This is your team name
-        self.avatar = 0  # Optional attribute
-        self.flag = "fr"  # Optional attribute
+        from simple_pid import PID
+        self.team = "Hopper"  # This is your team name
+        self.avatar = 4  # Optional attribute
+        self.flag = "aq"  # Optional attribute
         self.initial_manoeuvre = True
         self.target_site = None
+        self.target_height= None
+        self.loitering = False
+        self.loiter_height = 900 # 1090+36
+        self.height_pid = PID(0.1, 0.1, 0.1, setpoint=self.loiter_height, output_limits=(-1, 1))
 
     def run(
         self,
@@ -80,54 +110,63 @@ class Bot:
         me = players[self.team]
         x, y = me.position
         vx, vy = me.velocity
-        head = me.heading
+        # convert the heading to +/-180 degrees
+        head = (me.heading + 180) % 360 - 180
+
 
         # Perform an initial rotation to get the LEM pointing upwards
         if self.initial_manoeuvre:
-            if vx > 10:
-                instructions.main = True
+            command = rotate(current=head, target=0)
+            if command == "left":
+                instructions.left = True
+            elif command == "right":
+                instructions.right = True
             else:
-                command = rotate(current=head, target=0)
-                if command == "left":
-                    instructions.left = True
-                elif command == "right":
-                    instructions.right = True
-                else:
-                    self.initial_manoeuvre = False
-            return instructions
+                self.initial_manoeuvre = False
 
         # Search for a suitable landing site
         if self.target_site is None:
             self.target_site = find_landing_site(terrain)
-
-        # If no landing site had been found, just hover at 900 altitude.
-        if (self.target_site is None) and (y < 900) and (vy < 0):
-            instructions.main = True
+            if self.target_site is not None:
+                self.target_height = terrain[self.target_site]
 
         if self.target_site is not None:
-            command = None
-            diff = self.target_site - x
-            if np.abs(diff) < 50:
-                # Reduce horizontal speed
-                if abs(vx) <= 0.1:
-                    command = rotate(current=head, target=0)
-                elif vx > 0.1:
-                    command = rotate(current=head, target=90)
-                    instructions.main = True
-                else:
-                    command = rotate(current=head, target=-90)
-                    instructions.main = False
+            g = 1.62
+            on_ax = -3 * g * np.sin(np.deg2rad(head))
+            on_ay = 3 * g * np.cos(np.deg2rad(head)) - g
+            off_ax = 0
+            off_ay = -g
 
-                if command == "left":
-                    instructions.left = True
-                elif command == "right":
-                    instructions.right = True
+            half = 860
+            x_clamp = (self.target_site - x + half) % (2 * half) - half
 
-                if (abs(vx) < 0.5) and (vy < -3):
-                    instructions.main = True
+            on_ty = time_to_target(self.target_height - y, vy, on_ay)
+            on_tx = time_to_target(x_clamp, vx, on_ax)
+            off_ty = time_to_target(self.target_height - y, vy, off_ay)
+            off_tx = time_to_target(x_clamp, vx, off_ax)
+
+            print(f'{on_ax=} {on_ay=} {on_ty=} {on_tx=}')
+            print(f'{off_ax=} {off_ay=} {off_ty=} {off_tx=}')
+            print(f'{x_clamp=} {self.target_site=}')
+            print(f'{head=} {x=} {y=} {vx=} {vy=}')
+
+            if not (off_tx > 0) or (off_ty < off_tx):
+                self.height_pid.setpoint = y
+            elif critical_distance(vy, off_ay) > abs(self.target_height - y):
+                self.height_pid.setpoint = self.target_height
             else:
-                # Stay at constant altitude while moving towards target
-                if vy < 0:
-                    instructions.main = True
+                instructions.main = True
+                return
+
+            command = rotate(current=head, target=heading_to_target(x_clamp, vx))
+            if command == "left":
+                instructions.left = True
+            elif command == "right":
+                instructions.right = True
+
+        height_control = self.height_pid(y)
+
+        if height_control > 0:
+            instructions.main = True
 
         return instructions
