@@ -100,7 +100,7 @@ class Bot:
     def go_left(self, head, vx, control=0):
         if vx > -self.max_horizontal_speed:
             angle = control if control < self.max_angle else self.max_angle
-            instruction = rotate_instruction(current=head, target=control)
+            instruction = rotate_instruction(current=head, target=angle)
             # instruction.main = True
         else:
             # prepare to hold altitude
