@@ -56,7 +56,7 @@ def find_landing_site(terrain: np.ndarray) -> Union[int, None]:
     run_lengths = np.diff(np.append(run_starts, n))
 
     # Find all landing regions (where the size of the run is at least 25)
-    landing_regions = np.where(run_lengths > 24)
+    landing_regions = np.where(run_lengths > 48)
     # We get points for picking a landing site close in size to the lander, so now choose the smallest one
     if len(landing_regions[0]) > 0:
         landing_sites = run_starts[landing_regions]
@@ -175,6 +175,9 @@ class Bot:
             # horizontal_control = self.horizontal_pid(x_clamp)
             # print(f"{x_clamp=} {horizontal_control=}")
             instructions = self.control_horiozontal(head, vx, x_clamp)
+
+            if abs(x_clamp) < 10 and abs(vx) < 5:
+                self.hight_pid.setpoint = (y - self.target_height) * 0.5 + self.target_height
 
 
             # elif critical_distance(vy, off_ay) > abs(self.target_height - y):
