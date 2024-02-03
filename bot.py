@@ -189,8 +189,8 @@ class Bot:
                 instructions = rotate_instruction(current=head, target=0)
                 self.height_pid.setpoint = self.target_height + 1
 
-            if vy < 0 and critical_distance(vy, on_ay) >= 1.2*abs(y - self.target_height):
-                print(f'{vy=} {on_ay=} {self.target_height=} {y=} {critical_distance(vy, on_ay)=} {abs(self.target_height - y)=}')
+            if vy < 0 and critical_distance(vy, on_ay) >= 1.3*abs(y - self.target_height):
+                #print(f'{vy=} {on_ay=} {self.target_height=} {y=} {critical_distance(vy, on_ay)=} {abs(self.target_height - y)=}')
                 instructions.main = True
 
 
